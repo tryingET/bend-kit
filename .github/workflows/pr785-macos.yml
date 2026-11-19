@@ -1,0 +1,49 @@
+name: PR 785 Darwin arm64 verification
+on:
+  push:
+    branches: [verify/pr785-macos-arm64]
+permissions:
+  contents: read
+jobs:
+  process:
+    if: github.repository == 'tryingET/bend-kit'
+    runs-on: macos-15
+    timeout-minutes: 25
+    env:
+      BEND_NO_TELEMETRY: '1'
+      TEST_SHA: 947fe5efb8ff2df1b7bcb0438c3f639633acb7ca
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TEST_SHA }}
+          persist-credentials: false
+      - name: Verify checkout and runner
+        run: |
+          git rev-parse HEAD
+          test "$(git rev-parse HEAD)" = "$TEST_SHA"
+          sw_vers
+          uname -sm
+          test "$(uname -sm)" = 'Darwin arm64'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - name: Install pinned Darwin Bend distribution
+        run: |
+          test "$(bun --version)" = 1.4.4
+          cd "$RUNNER_TEMP"
+          name=bend-2.0.38-darwin-arm64.tar.gz
+          curl --fail --location --retry 3 --output "$name" "https://github.com/bendlang/bend/releases/download/v2.0.38/$name"
+          echo "9d5331d01e82dac40dd012953e78221f533f7df7ad7e16b07f1f7bd0dcd088dd  $name" | shasum -a 256 -c -
+          mkdir -p "$HOME/.bend"
+          tar -xzf "$name" --strip-components=1 -C "$HOME/.bend"
+          echo "$HOME/.bend/bin" >> "$GITHUB_PATH"
+          "$HOME/.bend/bin/bend" version
+          bun --version
+      - name: Compiled JavaScript on real Darwin libc
+        run: |
+          bend process/check.bend -o "$RUNNER_TEMP/process-check.js"
+          bun "$RUNNER_TEMP/process-check.js"
+      - name: Native process check
+        run: scripts/native-check.sh process
+      - name: Native and JavaScript ownership and selector checks
+        run: bash process/ownership-check.sh
